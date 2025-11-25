@@ -1,7 +1,7 @@
 {
   "name": "spring-gala-vote",
   "private": true,
-  "version": "0.0.0",
+  "version": "latest",
   "type": "module",
   "scripts": {
     "dev": "vite",
