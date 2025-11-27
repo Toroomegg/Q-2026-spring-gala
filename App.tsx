@@ -55,7 +55,7 @@ const Header: React.FC<{ title?: string; subtitle?: string; size?: 'small' | 'la
             ⬇️⬇️⬇️ 這裡更換最上面的 LOGO 圖片 ⬇️⬇️⬇️
         */}
         <img 
-            src="https://images.unsplash.com/photo-1548625361-98770742d4a0?auto=format&fit=crop&w=600&q=80" 
+            src="https://storage.googleapis.com/example-eggy-addressable/DownloadFile/Slogan.png" 
             alt="Spring Gala Logo" 
             onError={handleImageError}
             className="h-40 md:h-56 object-contain drop-shadow-[0_0_25px_rgba(234,179,8,0.5)] relative z-10"
