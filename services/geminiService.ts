@@ -3,6 +3,7 @@ import { Candidate } from "../types";
 
 let ai: GoogleGenAI | null = null;
 
+// 使用環境變數 (在 Vercel 上由 vite.config.ts 注入)
 if (process.env.API_KEY) {
   ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 }

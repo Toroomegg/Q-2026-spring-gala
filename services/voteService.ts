@@ -1,4 +1,3 @@
-
 import { Candidate, COLORS } from '../types';
 
 // --- CONFIGURATION ---
@@ -110,12 +109,14 @@ class VoteService {
 
     try {
         console.log(`📡 Sending Config Update: ${action}`, payload);
+        // 使用 POST 傳送 JSON 指令給 Apps Script
         await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
             method: 'POST',
-            mode: 'no-cors',
+            mode: 'no-cors', // 重要：Apps Script post 需要 no-cors
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: action, payload: payload })
         });
+        // 樂觀預期：等待幾秒讓後端處理完後，重新拉取資料
         setTimeout(() => this.fetchLatestData(), 1000);
         setTimeout(() => this.fetchLatestData(), 3000);
     } catch (e) {
@@ -207,6 +208,7 @@ class VoteService {
         return { success: true };
     }
 
+    // 使用 URLSearchParams 以確保 Google Form 能正確接收 (formData 有時會被 no-cors 擋掉)
     const params = new URLSearchParams();
     params.append(CONFIG.FORM_FIELDS.CANDIDATE_ID, candidateId);
     params.append(CONFIG.FORM_FIELDS.SCORE, score.toString());
@@ -226,7 +228,8 @@ class VoteService {
 
     } catch (error) {
       console.error("Voting failed:", error);
-      return { success: false, message: "傳送失敗，請檢查網路 (401 Check)" };
+      // 401 錯誤通常是因為 Google Form 設定了「限制組織內部使用者」或「僅限一次」
+      return { success: false, message: "傳送失敗。若為 401 錯誤，請檢查表單是否關閉「限制組織使用者」。" };
     }
   }
 
@@ -244,6 +247,7 @@ class VoteService {
       
       console.log(`🔥 Starting REAL Stress Test: ${totalVotes} votes`);
       let sentCount = 0;
+      // 計算平均間隔，但會加上 Jitter (隨機抖動)
       const delayMs = (durationSeconds * 1000) / totalVotes;
 
       const sendNextBatch = async () => {
@@ -257,6 +261,7 @@ class VoteService {
           const randomScore = Math.floor(Math.random() * 10) + 1;
 
           try {
+             // 強制 ignoreHistory = true 以允許重複投票
              await this.castVote(randomCandidate.id, randomScore, true);
              console.log(`🚀 Stress Test Vote (${sentCount+1}): ${randomCandidate.id}=${randomScore}`);
           } catch(e) {
@@ -265,6 +270,8 @@ class VoteService {
 
           sentCount++;
           onProgress(sentCount);
+
+          // 加入隨機延遲，模擬人類操作並降低被鎖 IP 風險
           const jitter = Math.random() * 50; 
           setTimeout(sendNextBatch, delayMs + jitter); 
       };
@@ -280,8 +287,11 @@ class VoteService {
 
   startPolling() {
     this.pollingSubscriberCount++;
-    if (this.pollingIntervalId) return; 
+    if (this.pollingIntervalId) return; // 已經在跑了
+    
+    // 立即跑一次
     this.fetchLatestData(); 
+    // 設定排程
     this.pollingIntervalId = setInterval(() => {
       this.fetchLatestData();
     }, CONFIG.POLLING_INTERVAL);
@@ -290,7 +300,7 @@ class VoteService {
   stopPolling() {
     this.pollingSubscriberCount--;
     if (this.pollingSubscriberCount <= 0) {
-      this.pollingSubscriberCount = 0; 
+      this.pollingSubscriberCount = 0; // 防呆
       if (this.pollingIntervalId) {
         clearInterval(this.pollingIntervalId);
         this.pollingIntervalId = null;
@@ -328,58 +338,59 @@ class VoteService {
       let hasChanges = false;
       let newCandidateList: Candidate[] = [];
       
-      // 檢查 Config 中是否有 SETTING_MODE
+      // 分離設定 (SETTING_MODE) 與參賽者 (Candidates)
       let settingRowFound = false;
-      let newGlobalTestMode = false;
+      let newGlobalTestMode = this.isGlobalTestMode; // 預設維持現狀
+      const validRemoteCandidates: any[] = [];
 
-      // 1. 同步名單 & 檢查特殊設定
-      if (Array.isArray(remoteConfig) && remoteConfig.length > 0) {
-          const mergedList: Candidate[] = [];
-          
-          remoteConfig.forEach((rc: any, index: number) => {
-              // 檢查是否為特殊設定行
+      if (Array.isArray(remoteConfig)) {
+          remoteConfig.forEach((rc: any) => {
               if (rc.id === SETTING_ROW_ID) {
                   settingRowFound = true;
+                  // 檢查 Name 是否為 TEST
                   if (rc.name === 'TEST') {
                       newGlobalTestMode = true;
+                  } else {
+                      newGlobalTestMode = false;
                   }
-                  return; // 不加入名單列表
+              } else if (rc.id) {
+                  // 只有非設定且有 ID 的才算參賽者
+                  validRemoteCandidates.push(rc);
               }
-
-              const existing = this.candidates.find(c => c.id === rc.id);
-              mergedList.push({
-                  id: rc.id,
-                  name: rc.name,
-                  song: rc.song,
-                  image: rc.image || '',
-                  videoLink: rc.videoLink || '',
-                  totalScore: existing?.totalScore || 0,
-                  voteCount: existing?.voteCount || 0,
-                  color: existing?.color || COLORS[index % COLORS.length]
-              });
           });
-
-          // 更新狀態
-          this.hasSettingRow = settingRowFound;
-          if (this.isGlobalTestMode !== newGlobalTestMode) {
-              this.isGlobalTestMode = newGlobalTestMode;
-              hasChanges = true; // 模式改變也要通知 UI
-          }
-
-          // 如果名單有變，更新
-          // 這裡有個小細節：因為 candidates 隨時在變 (分數在變)，所以不能只比對 Config
-          // 暫且相信如果 remoteConfig 有東西，就完全採用它
-          if (mergedList.length > 0) {
-              // 這裡我們暫時只把架構建立起來，真正分數合併在下面
-              newCandidateList = mergedList;
-          } else {
-              newCandidateList = [...this.candidates];
-          }
-      } else {
-          newCandidateList = [...this.candidates];
       }
 
-      // 2. 更新分數
+      // 更新全域測試模式狀態
+      this.hasSettingRow = settingRowFound;
+      if (this.isGlobalTestMode !== newGlobalTestMode) {
+          this.isGlobalTestMode = newGlobalTestMode;
+          hasChanges = true;
+      }
+
+      // 構建參賽者名單
+      // 如果 Excel 有真正的參賽者 (validRemoteCandidates > 0)，就完全使用 Excel 的名單
+      // 如果 Excel 只有設定檔或是空的，就使用預設名單 (INITIAL_CANDIDATES)，避免畫面空白
+      const sourceList = validRemoteCandidates.length > 0 ? validRemoteCandidates : INITIAL_CANDIDATES;
+
+      newCandidateList = sourceList.map((src: any, index: number) => {
+          // 嘗試保留現有的狀態 (分數、顏色)，避免畫面閃爍
+          const existing = this.candidates.find(c => c.id === src.id);
+          
+          return {
+              id: src.id,
+              name: src.name,
+              song: src.song,
+              image: src.image || '',
+              videoLink: src.videoLink || '',
+              // 分數稍後更新
+              totalScore: existing?.totalScore || 0,
+              voteCount: existing?.voteCount || 0,
+              // 顏色若 Excel 沒給，就維持舊的或依順序分配
+              color: existing?.color || COLORS[index % COLORS.length]
+          };
+      });
+
+      // 2. 更新分數 (從 remoteScores)
       newCandidateList = newCandidateList.map(c => {
         const stats = remoteScores[c.id];
         if (stats) {
@@ -394,10 +405,19 @@ class VoteService {
         return c;
       });
 
-      // 如果名單結構變了 (例如從預設名單變成 Excel 名單)，也要觸發更新
-      if (newCandidateList.length !== this.candidates.length || 
-          newCandidateList.some((c, i) => c.id !== this.candidates[i].id)) {
+      // 檢查名單是否有變動 (數量不同，或 ID 不同，或內容不同)
+      // 這裡做深一點的檢查，確保 Excel 改名時會觸發更新
+      if (newCandidateList.length !== this.candidates.length) {
           hasChanges = true;
+      } else {
+          for (let i = 0; i < newCandidateList.length; i++) {
+              const nc = newCandidateList[i];
+              const oc = this.candidates[i];
+              if (nc.id !== oc.id || nc.name !== oc.name || nc.song !== oc.song || nc.image !== oc.image) {
+                  hasChanges = true;
+                  break;
+              }
+          }
       }
 
       if (hasChanges) {

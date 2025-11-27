@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Candidate, COLORS } from './types';
@@ -9,7 +8,7 @@ import Fireworks from './components/Fireworks';
 // --- Shared Components ---
 
 const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-  e.currentTarget.src = "https://storage.googleapis.com/example-eggy-addressable/DownloadFile/Slogan.png";
+  e.currentTarget.src = "https://images.unsplash.com/photo-1516280440614-6697288d5d38?auto=format&fit=crop&w=800&q=80";
 };
 
 // Custom Confirmation Modal
@@ -88,6 +87,7 @@ const VotePage: React.FC = () => {
   const [isGlobalTestMode, setIsGlobalTestMode] = useState(false);
 
   useEffect(() => {
+    // 進入投票頁面時，主動抓取一次最新資料 (解決換頁延遲問題)
     voteService.fetchLatestData();
 
     const sync = () => {
@@ -103,6 +103,7 @@ const VotePage: React.FC = () => {
     if (!selectedCandidate) return;
     setIsSubmitting(true);
     
+    // 假裝在忙，優化 UX
     await new Promise(r => setTimeout(r, 600)); 
     
     const result = await voteService.castVote(selectedCandidate.id, score);
@@ -322,522 +323,445 @@ const ResultsPage: React.FC = () => {
     voteService.startPolling();
 
     const updateData = () => {
-      const data = voteService.getCandidates();
-      const sorted = [...data].sort((a, b) => b.totalScore - a.totalScore);
+      const current = voteService.getCandidates();
+      // Sort: Total Score Descending
+      const sorted = [...current].sort((a, b) => b.totalScore - a.totalScore);
       setCandidates(sorted);
-      setTotalScore(sorted.reduce((acc, curr) => acc + curr.totalScore, 0));
+      setTotalScore(sorted.reduce((acc, c) => acc + c.totalScore, 0));
     };
-    
+
     updateData();
-    const unsubscribe = voteService.subscribe(updateData);
-
-    return () => {
-      unsubscribe();
-      voteService.stopPolling();
-    };
-  }, []);
-
-  useEffect(() => {
-    const fetchCommentary = async () => {
-      const currentCandidates = voteService.getCandidates();
-      if (currentCandidates.length > 0 && currentCandidates.some(c => c.totalScore > 0)) {
-        const text = await generateLiveCommentary(currentCandidates);
-        setCommentary(text);
-      }
-    };
+    const unsub = voteService.subscribe(updateData);
     
-    const timer = setTimeout(fetchCommentary, 3000);
-    const interval = setInterval(fetchCommentary, 20000);
+    // AI Commentary Loop
+    const commentInterval = setInterval(async () => {
+        const currentCandidates = voteService.getCandidates();
+        if (currentCandidates.length > 0) {
+            const text = await generateLiveCommentary(currentCandidates);
+            setCommentary(text);
+        }
+    }, 20000); // Update every 20s
+
     return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
+        voteService.stopPolling();
+        unsub();
+        clearInterval(commentInterval);
     };
   }, []);
 
+  // Top 3 for Podium
   const top3 = candidates.slice(0, 3);
   const others = candidates.slice(3);
-  const maxScore = candidates.length > 0 ? candidates[0].totalScore : 1;
+
+  // Dynamic Font Size Calculation
+  const maxScore = candidates[0]?.totalScore || 1;
+  const getFontSizeClass = (score: number) => {
+      const ratio = score / maxScore;
+      if (ratio > 0.9) return "text-6xl md:text-8xl text-yellow-300 drop-shadow-[0_0_30px_rgba(234,179,8,0.8)]";
+      if (ratio > 0.7) return "text-5xl md:text-7xl text-gray-100";
+      return "text-4xl md:text-5xl text-gray-300";
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-white relative font-sans overflow-x-hidden">
-      
-      <div 
-        className="fixed inset-0 z-0 bg-cover bg-center pointer-events-none"
-        style={{ 
-            backgroundImage: `url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1920&q=80')`,
-        }}
-      >
-        <div className="absolute inset-0 bg-slate-950/80 mix-blend-multiply"></div>
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent"></div>
-      </div>
-
-      <div className="relative z-10 flex flex-col h-full p-4 md:p-6">
-        <Header subtitle={`總熱度: ${totalScore}`} size="small" />
-
-        <div className="flex flex-col md:flex-row justify-center items-end gap-6 md:gap-8 mb-8 mt-4 md:h-[450px]">
-           
-           {/* 2nd Place */}
-           {top3[1] && (
-               <div className="order-2 md:order-1 w-full md:w-1/4 flex flex-col justify-end h-full animate-slide-up z-10" style={{ animationDelay: '0.2s' }}>
-                   <div className="relative bg-slate-800/80 backdrop-blur-md rounded-t-3xl border-t-4 border-slate-400 p-6 text-center shadow-[0_0_30px_rgba(148,163,184,0.3)] h-[70%] flex flex-col items-center">
-                        <div className="absolute -top-10 text-6xl drop-shadow-lg filter grayscale-[0.2] animate-float">🥈</div>
-                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-slate-400 mb-2 mt-4 bg-slate-900">
-                             {top3[1].image ? <img src={top3[1].image} onError={handleImageError} className="w-full h-full object-cover" /> : null}
-                        </div>
-                        <h2 className="text-xl md:text-2xl font-bold truncate w-full">{top3[1].name}</h2>
-                        <p className="text-slate-400 text-sm mb-4">{top3[1].song}</p>
-                        <div className="mt-auto text-4xl font-black text-slate-200">{top3[1].totalScore}</div>
-                   </div>
-               </div>
-           )}
-
-           {/* 1st Place */}
-           {top3[0] && (
-               <div className="order-1 md:order-2 w-full md:w-1/3 flex flex-col justify-end h-full animate-slide-up z-20 mb-8 md:mb-0">
-                   <div className="relative bg-gradient-to-b from-yellow-900/80 to-slate-900/90 backdrop-blur-md rounded-t-[3rem] border-t-8 border-yellow-400 p-8 text-center shadow-[0_0_60px_rgba(234,179,8,0.6)] h-[85%] flex flex-col items-center transform md:-translate-y-4">
-                        <div className="absolute -top-14 text-8xl drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)] animate-bounce">🥇</div>
-                        <div className="absolute top-0 right-0 left-0 h-full w-full bg-yellow-400/5 rounded-t-[3rem] animate-pulse"></div>
-                        <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-yellow-400 mb-4 mt-8 shadow-xl bg-slate-900">
-                             {top3[0].image ? <img src={top3[0].image} onError={handleImageError} className="w-full h-full object-cover" /> : null}
-                        </div>
-                        <h2 className="text-2xl md:text-4xl font-black text-white truncate w-full mb-1">{top3[0].name}</h2>
-                        <p className="text-yellow-400 font-bold text-lg mb-6">{top3[0].song}</p>
-                        <div className="mt-auto text-6xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 to-yellow-600 drop-shadow-sm">
-                            {top3[0].totalScore}
-                        </div>
-                   </div>
-               </div>
-           )}
-
-           {/* 3rd Place */}
-           {top3[2] && (
-               <div className="order-3 md:order-3 w-full md:w-1/4 flex flex-col justify-end h-full animate-slide-up z-10" style={{ animationDelay: '0.4s' }}>
-                   <div className="relative bg-slate-800/80 backdrop-blur-md rounded-t-3xl border-t-4 border-orange-500 p-6 text-center shadow-[0_0_30px_rgba(249,115,22,0.3)] h-[60%] flex flex-col items-center">
-                        <div className="absolute -top-10 text-6xl drop-shadow-lg filter sepia-[0.5] animate-float" style={{ animationDelay: '1s' }}>🥉</div>
-                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-orange-500 mb-2 mt-4 bg-slate-900">
-                             {top3[2].image ? <img src={top3[2].image} onError={handleImageError} className="w-full h-full object-cover" /> : null}
-                        </div>
-                        <h2 className="text-xl md:text-2xl font-bold truncate w-full">{top3[2].name}</h2>
-                        <p className="text-slate-400 text-sm mb-4">{top3[2].song}</p>
-                        <div className="mt-auto text-4xl font-black text-orange-200">{top3[2].totalScore}</div>
-                   </div>
-               </div>
-           )}
-        </div>
-
-        {others.length > 0 && (
-            <div className="max-w-5xl mx-auto w-full grid gap-3 animate-fade-in-up pb-8">
-                {others.map((c, idx) => (
-                    <div key={c.id} className="bg-slate-800/60 backdrop-blur-sm border border-slate-700 rounded-xl p-3 flex items-center gap-4 hover:bg-slate-700/60 transition-colors">
-                        <div className="font-bold text-slate-400 w-8 text-center text-xl">#{idx + 4}</div>
-                        <div className="w-12 h-12 rounded-lg bg-slate-700 overflow-hidden flex-shrink-0">
-                             {c.image ? <img src={c.image} onError={handleImageError} className="w-full h-full object-cover" /> : null}
-                        </div>
-                        <div className="flex-grow min-w-0 flex flex-col md:flex-row md:items-center gap-1 md:gap-4">
-                             <div className="font-bold text-lg text-white truncate w-48">{c.name}</div>
-                             <div className="text-sm text-slate-400 truncate md:w-48">🎵 {c.song}</div>
-                             
-                             <div className="hidden md:block flex-grow h-2 bg-slate-700 rounded-full overflow-hidden relative">
-                                 <div 
-                                    className="h-full bg-slate-500 rounded-full" 
-                                    style={{ width: `${(c.totalScore / maxScore) * 100}%`, backgroundColor: c.color }}
-                                 ></div>
-                             </div>
-                        </div>
-                        <div className="text-2xl font-bold text-white w-20 text-right">{c.totalScore}</div>
-                    </div>
-                ))}
-            </div>
-        )}
-        
-        <div className="fixed bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-md border-t border-yellow-500/30 p-2 md:p-3 flex items-center justify-center z-50">
-            <span className="text-2xl mr-3 animate-pulse">🎤</span>
-            <p className="text-sm md:text-xl font-bold text-yellow-100 text-center truncate max-w-4xl">{commentary}</p>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-900 text-white overflow-hidden relative pb-20">
       <Fireworks />
+      
+      {/* Background Ambience */}
+      <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-red-600/20 blur-[100px] animate-pulse"></div>
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-600/20 blur-[100px] animate-pulse" style={{ animationDelay: '1s' }}></div>
+      </div>
+
+      <div className="relative z-10 px-4 md:px-8 py-6 max-w-7xl mx-auto h-full flex flex-col">
+        <Header size="small" subtitle="即時戰況" />
+
+        {/* AI Commentary Marquee */}
+        <div className="mb-8 bg-slate-800/50 backdrop-blur-md border border-slate-600 p-4 rounded-xl shadow-lg relative overflow-hidden group">
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500"></div>
+            <div className="flex items-center gap-4">
+                <span className="text-2xl animate-spin-slow">🤖</span>
+                <p className="text-xl md:text-2xl font-bold text-yellow-100 typing-effect whitespace-nowrap overflow-hidden text-ellipsis">
+                    {commentary}
+                </p>
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+        </div>
+
+        {/* Podium Layout (Top 3) */}
+        <div className="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-8 mb-12 min-h-[400px]">
+            {/* 2nd Place */}
+            {top3[1] && (
+                <div className="order-2 md:order-1 w-full md:w-1/3 flex flex-col items-center animate-slide-up" style={{ animationDelay: '0.2s' }}>
+                    <div className="relative mb-4">
+                         <div className="w-24 h-24 rounded-full border-4 border-slate-400 overflow-hidden shadow-[0_0_20px_rgba(148,163,184,0.5)]">
+                             <img src={top3[1].image} onError={handleImageError} className="w-full h-full object-cover" />
+                         </div>
+                         <div className="absolute -bottom-2 -right-2 text-4xl animate-pulse">🥈</div>
+                    </div>
+                    <div className="bg-slate-800/80 w-full p-4 rounded-t-2xl border-t-4 border-slate-400 flex flex-col items-center h-[200px] justify-end backdrop-blur-sm">
+                         <h3 className="text-xl font-bold text-slate-300 text-center">{top3[1].name}</h3>
+                         <span className="text-4xl font-black text-white mt-2">{top3[1].totalScore}</span>
+                         <span className="text-xs text-slate-500 uppercase mt-1">Total Score</span>
+                    </div>
+                </div>
+            )}
+
+            {/* 1st Place */}
+            {top3[0] && (
+                <div className="order-1 md:order-2 w-full md:w-1/3 flex flex-col items-center z-20 animate-slide-up">
+                    <div className="relative mb-6">
+                        <div className="absolute -inset-4 bg-yellow-500/30 blur-xl rounded-full animate-pulse"></div>
+                        <div className="w-32 h-32 rounded-full border-4 border-yellow-400 overflow-hidden shadow-[0_0_40px_rgba(234,179,8,0.6)] relative z-10">
+                            <img src={top3[0].image} onError={handleImageError} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-6xl animate-bounce z-20">👑</div>
+                         <div className="absolute -bottom-2 -right-2 text-5xl drop-shadow-md z-20">🥇</div>
+                    </div>
+                    <div className="bg-gradient-to-b from-yellow-600/20 to-slate-800/90 w-full p-6 rounded-t-3xl border-t-4 border-yellow-400 flex flex-col items-center h-[260px] justify-end backdrop-blur-md shadow-2xl">
+                         <h3 className="text-3xl font-black text-yellow-300 text-center drop-shadow-md mb-1">{top3[0].name}</h3>
+                         <p className="text-yellow-100/70 text-sm font-bold mb-4">{top3[0].song}</p>
+                         <span className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-yellow-200 drop-shadow-[0_0_15px_rgba(234,179,8,0.8)]">
+                             {top3[0].totalScore}
+                         </span>
+                         <span className="text-sm text-yellow-500 font-bold uppercase mt-2 tracking-widest">Champion</span>
+                    </div>
+                </div>
+            )}
+
+            {/* 3rd Place */}
+            {top3[2] && (
+                <div className="order-3 md:order-3 w-full md:w-1/3 flex flex-col items-center animate-slide-up" style={{ animationDelay: '0.4s' }}>
+                    <div className="relative mb-4">
+                         <div className="w-24 h-24 rounded-full border-4 border-orange-700 overflow-hidden shadow-[0_0_20px_rgba(194,65,12,0.5)]">
+                             <img src={top3[2].image} onError={handleImageError} className="w-full h-full object-cover" />
+                         </div>
+                         <div className="absolute -bottom-2 -right-2 text-4xl animate-pulse">🥉</div>
+                    </div>
+                    <div className="bg-slate-800/80 w-full p-4 rounded-t-2xl border-t-4 border-orange-700 flex flex-col items-center h-[160px] justify-end backdrop-blur-sm">
+                         <h3 className="text-xl font-bold text-orange-200 text-center">{top3[2].name}</h3>
+                         <span className="text-4xl font-black text-white mt-2">{top3[2].totalScore}</span>
+                         <span className="text-xs text-slate-500 uppercase mt-1">Total Score</span>
+                    </div>
+                </div>
+            )}
+        </div>
+
+        {/* List for the rest */}
+        <div className="grid grid-cols-1 gap-4">
+            {others.map((c, idx) => (
+                <div key={c.id} className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4 flex items-center gap-4 hover:bg-slate-700/50 transition-colors animate-fade-in-up" style={{ animationDelay: `${0.5 + idx * 0.1}s` }}>
+                    <span className="text-2xl font-bold text-slate-500 w-8 text-center">#{idx + 4}</span>
+                    <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-slate-600">
+                        {c.image && <img src={c.image} onError={handleImageError} className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h4 className="text-lg font-bold text-white truncate">{c.name}</h4>
+                        <p className="text-slate-400 text-sm truncate">🎵 {c.song}</p>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-2xl font-bold text-slate-300">{c.totalScore}</span>
+                        <span className="text-xs text-slate-500 block">pts</span>
+                    </div>
+                </div>
+            ))}
+        </div>
+        
+        {/* Total Votes Footer */}
+        <div className="mt-12 text-center pb-8">
+            <div className="inline-block bg-slate-900/80 px-8 py-2 rounded-full border border-slate-700">
+                <span className="text-slate-400">總累積票數: </span>
+                <span className="text-white font-mono font-bold text-xl ml-2">{totalScore}</span>
+            </div>
+        </div>
+
+      </div>
     </div>
   );
 };
 
 const AdminPage: React.FC = () => {
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [isAuthed, setIsAuthed] = useState(false);
   const [password, setPassword] = useState('');
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  const [isGlobalTestMode, setIsGlobalTestMode] = useState(false); // 全域測試模式狀態
-  const [isSaving, setIsSaving] = useState(false); 
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [newCandidate, setNewCandidate] = useState({ name: '', song: '', image: '', videoLink: '' });
+  const [stressCount, setStressCount] = useState(0);
+  const [isStressTesting, setIsStressTesting] = useState(false);
+  const [globalTestMode, setGlobalTestMode] = useState(false);
   
-  const [stressProgress, setStressProgress] = useState({ count: 0, total: 0 });
-  const [isStressing, setIsStressing] = useState(false);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [newCandidate, setNewCandidate] = useState({ id: '', name: '', song: '', image: '' });
-  const [editForm, setEditForm] = useState({ name: '', song: '', image: '' });
-  const [diagResult, setDiagResult] = useState<string>('');
-
-  const [confirmState, setConfirmState] = useState<{
-      isOpen: boolean;
-      title: string;
-      message: string;
-      isDangerous: boolean;
-      onConfirm: () => void;
-  }>({
-      isOpen: false,
-      title: '',
-      message: '',
-      isDangerous: false,
-      onConfirm: () => {}
+  // Dialog States
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void, isDangerous?: boolean}>({
+      isOpen: false, title: '', message: '', onConfirm: () => {}
   });
+  
+  // Loading States
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (isAuthed) {
-        voteService.startPolling();
-    }
+    if (!isAuthenticated) return;
+    
+    voteService.startPolling();
     const update = () => {
         setCandidates(voteService.getCandidates());
-        setIsDemoMode(voteService.isDemoMode);
-        setIsGlobalTestMode(voteService.isGlobalTestMode);
+        setIsStressTesting(voteService.isRunningStressTest);
+        setGlobalTestMode(voteService.isGlobalTestMode);
     };
-    voteService.subscribe(update);
+    update();
+    const unsub = voteService.subscribe(update);
     return () => {
-        if (isAuthed) {
-             voteService.stopPolling();
-        }
-    }
-  }, [isAuthed]);
+        voteService.stopPolling();
+        unsub();
+    };
+  }, [isAuthenticated]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'admin888') setIsAuthed(true);
-    else alert('Wrong password');
+    if (password === 'admin888') {
+      setIsAuthenticated(true);
+    } else {
+      alert('密碼錯誤');
+    }
   };
 
-  const toggleDemoMode = () => {
-      const newState = !isDemoMode;
-      voteService.setDemoMode(newState);
-      setIsDemoMode(newState);
-  };
-  
-  // 切換全域測試模式 (寫入 Excel)
-  const toggleGlobalTestMode = async () => {
-      const newState = !isGlobalTestMode;
+  const handleGlobalTestModeToggle = async () => {
+      const newState = !globalTestMode;
       setIsSaving(true);
-      try {
-          await voteService.setGlobalTestMode(newState);
-      } finally {
-          setIsSaving(false);
-      }
+      await voteService.setGlobalTestMode(newState);
+      setIsSaving(false);
   };
-  
-  const testApi = async () => {
-      setDiagResult("正在測試 API...");
+
+  const handleAddCandidate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const id = `c${Date.now()}`;
+    
+    setConfirmModal({
+        isOpen: true,
+        title: '新增參賽者',
+        message: `確定要新增 "${newCandidate.name}" 嗎？\n這將會寫入 Google Sheet。`,
+        onConfirm: async () => {
+            setConfirmModal(prev => ({...prev, isOpen: false}));
+            setIsSaving(true);
+            await voteService.addCandidate({ id, ...newCandidate });
+            setNewCandidate({ name: '', song: '', image: '', videoLink: '' });
+            setIsSaving(false);
+        }
+    });
+  };
+
+  const handleDelete = (id: string, name: string) => {
+    setConfirmModal({
+        isOpen: true,
+        title: '刪除參賽者',
+        message: `⚠️ 警告：確定要刪除 "${name}" 嗎？\n此操作無法復原，且會同步刪除 Excel 中的資料。`,
+        isDangerous: true,
+        onConfirm: async () => {
+            setConfirmModal(prev => ({...prev, isOpen: false}));
+            setIsSaving(true);
+            await voteService.deleteCandidate(id);
+            setIsSaving(false);
+        }
+    });
+  };
+
+  const handleStressTest = () => {
+    setConfirmModal({
+        isOpen: true,
+        title: '🔥 開始壓力測試',
+        message: '這將會在 60 秒內發送 100 筆真實請求到 Google Form。\n請確保您的網路穩定。\n\n確定要開始嗎？',
+        isDangerous: true,
+        onConfirm: () => {
+            setConfirmModal(prev => ({...prev, isOpen: false}));
+            voteService.runStressTest(100, 60, (count) => setStressCount(count));
+        }
+    });
+  };
+
+  const handleTestConnection = async () => {
       const res = await voteService.testConnection();
-      setDiagResult(res.message);
+      alert(res.message);
   };
 
-  const requestStressTest = () => {
-      if (isDemoMode) {
-          alert("請先關閉 Demo Mode，否則只是在跑假資料動畫！");
-          return;
-      }
-      setConfirmState({
-          isOpen: true,
-          title: '🔥 確認執行壓力測試',
-          message: '⚠️ 警告：這將會在一分鐘內對 Google Form 發送大量真實請求！\n\n這會導致 Google Sheet 瞬間增加數百行資料。\n\n確定要執行嗎？',
-          isDangerous: true,
-          onConfirm: () => {
-              setConfirmState(prev => ({...prev, isOpen: false}));
-              startStressTest();
-          }
-      });
+  const openFormDiagnostic = () => {
+      window.open(voteService.getFormUrl(), '_blank');
   };
 
-  const startStressTest = () => {
-      setIsStressing(true);
-      setStressProgress({ count: 0, total: 100 });
-      
-      voteService.runStressTest(100, 60, (c) => {
-          setStressProgress(prev => ({ ...prev, count: c }));
-          if (c >= 100) setIsStressing(false);
-      });
-  };
-
-  const handleAdd = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!newCandidate.id || !newCandidate.name) return;
-      
-      setIsSaving(true);
-      try {
-          await voteService.addCandidate(newCandidate);
-          setNewCandidate({ id: '', name: '', song: '', image: '' });
-          alert("指令已發送！請稍等 3-5 秒，Excel 同步完成後列表將自動更新。");
-      } finally {
-          setIsSaving(false);
-      }
-  };
-
-  const confirmDelete = (id: string) => {
-      setConfirmState({
-          isOpen: true,
-          title: '🗑️ 確認刪除參賽者',
-          message: `確定要刪除 ${id} 嗎?\n\n此操作將會刪除 Excel 中的資料，且全場觀眾端也會同步移除。`,
-          isDangerous: true,
-          onConfirm: () => {
-              setConfirmState(prev => ({...prev, isOpen: false}));
-              executeDelete(id);
-          }
-      });
-  };
-
-  const executeDelete = async (id: string) => {
-      setIsSaving(true);
-      try {
-          await voteService.deleteCandidate(id);
-      } finally {
-          setIsSaving(false);
-      }
-  };
-
-  const startEdit = (c: Candidate) => {
-      setEditingId(c.id);
-      setEditForm({ name: c.name, song: c.song, image: c.image || '' });
-  };
-
-  const saveEdit = async (id: string) => {
-      setIsSaving(true);
-      try {
-          await voteService.updateCandidate(id, editForm);
-          setEditingId(null);
-      } finally {
-          setIsSaving(false);
-      }
-  };
-
-  if (!isAuthed) {
+  if (!isAuthenticated) {
     return (
-      <div className="h-screen flex items-center justify-center bg-slate-900">
-        <form onSubmit={handleLogin} className="bg-slate-800 p-8 rounded-2xl shadow-2xl text-center space-y-6 w-80 border border-slate-700">
-          <h1 className="text-3xl text-white font-bold">後台管理登入</h1>
-          <input 
-            type="password" 
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+        <form onSubmit={handleLogin} className="glass-panel p-8 rounded-2xl w-full max-w-md">
+          <h2 className="text-2xl font-bold text-center mb-6">後台管理登入</h2>
+          <input
+            type="password"
             value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="bg-slate-700 text-white px-4 py-3 rounded-lg w-full outline-none focus:ring-2 focus:ring-yellow-500 transition-all"
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 mb-4 text-white focus:ring-2 focus:ring-yellow-500 outline-none"
             placeholder="請輸入密碼"
           />
-          <button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white font-bold px-4 py-3 rounded-lg w-full hover:brightness-110 transition-all">登入</button>
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors">
+            登入
+          </button>
         </form>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-4 md:p-8 text-white pb-24">
+    <div className="min-h-screen bg-slate-900 p-4 md:p-8 pb-24">
       <ConfirmModal 
-          isOpen={confirmState.isOpen}
-          title={confirmState.title}
-          message={confirmState.message}
-          onConfirm={confirmState.onConfirm}
-          onCancel={() => setConfirmState(prev => ({...prev, isOpen: false}))}
-          isDangerous={confirmState.isDangerous}
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({...prev, isOpen: false}))}
+        isDangerous={confirmModal.isDangerous}
       />
 
-      <div className="max-w-7xl mx-auto">
-        <Header subtitle="賽事控制台" size="small" />
-        
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 bg-slate-800/50 p-4 rounded-xl backdrop-blur-sm">
-          <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-200">
-             🔧 管理工具
-          </h2>
-          <div className="flex items-center gap-4">
-             {/* Global Test Mode Toggle */}
-             <div className="flex items-center gap-3 bg-slate-900 px-4 py-2 rounded-lg border border-slate-600">
-                 <span className={`text-sm font-bold ${isGlobalTestMode ? 'text-green-400' : 'text-slate-400'}`}>
-                     {isGlobalTestMode ? '🛠 測試模式 (無限投票)' : '🏆 正式活動 (一人一票)'}
-                 </span>
-                 <button 
-                    onClick={toggleGlobalTestMode}
-                    disabled={isSaving}
-                    className={`w-14 h-7 rounded-full p-1 transition-colors relative ${isGlobalTestMode ? 'bg-green-600' : 'bg-slate-600'}`}
-                 >
-                     <div className={`w-5 h-5 bg-white rounded-full transition-transform shadow-md ${isGlobalTestMode ? 'translate-x-7' : 'translate-x-0'}`}></div>
-                 </button>
-             </div>
-
-             <div className="flex items-center gap-2 border-l border-slate-600 pl-4">
-                 <span className="text-sm font-bold text-slate-500">Demo (Local)</span>
-                 <button 
-                    onClick={toggleDemoMode}
-                    className={`w-10 h-5 rounded-full p-0.5 transition-colors ${isDemoMode ? 'bg-blue-500' : 'bg-slate-700'}`}
-                 >
-                     <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isDemoMode ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                 </button>
-             </div>
-          </div>
+      <div className="max-w-6xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+            <h1 className="text-3xl font-bold">⚙️ 控制台</h1>
+            <div className="flex gap-2">
+                <button onClick={() => voteService.clearMyHistory()} className="bg-slate-700 px-4 py-2 rounded-lg text-sm">清除本機投票紀錄</button>
+                <button onClick={() => setIsAuthenticated(false)} className="bg-red-600 px-4 py-2 rounded-lg text-sm">登出</button>
+            </div>
         </div>
-        
-        {/* 連線診斷區塊 */}
-        <div className="mb-8 grid md:grid-cols-2 gap-8">
-            <div className="bg-slate-800/80 border border-slate-700 p-6 rounded-2xl">
-                <h3 className="text-xl font-bold text-slate-200 mb-2">🚑 連線診斷</h3>
-                <div className="flex flex-wrap gap-4">
-                    <a 
-                        href={voteService.getFormUrl()} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"
-                    >
-                        <span>📝 1. 打開表單 (檢查權限)</span>
-                    </a>
-                    <button 
-                        onClick={testApi}
-                        className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"
-                    >
-                        <span>📡 2. 測試 API 讀取</span>
-                    </button>
+
+        {/* Sync Status Overlay */}
+        {isSaving && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
+                <div className="bg-slate-800 p-6 rounded-xl flex items-center gap-4 border border-slate-600 shadow-2xl">
+                    <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-white font-bold">正在同步至 Google Sheet...</span>
                 </div>
-                {diagResult && (
-                    <div className="mt-4 p-3 bg-black/30 rounded font-mono text-sm text-yellow-300">
-                        {diagResult}
-                    </div>
-                )}
             </div>
+        )}
 
-            {/* 壓力測試區塊 */}
-            <div className="bg-red-900/30 border border-red-700 p-6 rounded-2xl relative overflow-hidden">
-                <h3 className="text-xl font-bold text-red-200 mb-2 flex items-center gap-2">
-                    🔥 真·壓力測試 (Real Stress Test)
-                </h3>
-                <p className="text-sm text-red-300/80 mb-4">
-                    這會在一分鐘內發送 <b>100 筆</b> 真實請求到 Google Form。<br/>
-                    這會導致 Google Sheet 快速增加資料列，可測試後端承載力。
-                </p>
-                <button 
-                    onClick={requestStressTest}
-                    disabled={isStressing}
-                    className="w-full bg-red-600 hover:bg-red-500 disabled:bg-slate-600 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2"
-                >
-                   {isStressing ? `轟炸中... (${stressProgress.count}/100)` : '開始 60秒 / 100票 真實寫入測試'}
-                </button>
-                {isStressing && (
-                    <div className="w-full bg-slate-700 h-2 mt-4 rounded-full overflow-hidden">
-                        <div 
-                            className="bg-red-500 h-full transition-all duration-300" 
-                            style={{ width: `${(stressProgress.count / 100) * 100}%` }}
-                        ></div>
-                    </div>
-                )}
-            </div>
-        </div>
-        
-        <div className="grid gap-6 md:grid-cols-12 mb-8 items-start">
-          
-          {/* Add Candidate Form */}
-          <div className="md:col-span-4 bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl md:sticky md:top-4 z-20">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
-              <span className="text-green-400">➕ 新增參賽者</span>
-            </h2>
-            <div className="mb-4 text-xs bg-blue-900/30 text-blue-200 p-2 rounded border border-blue-700/50">
-               ℹ️ 這裡的操作會同步寫入 <b>Google Sheet (Config 分頁)</b>，全場觀眾的手機會在 3-5 秒後自動更新。
-            </div>
-            <form onSubmit={handleAdd} className="space-y-4">
-                <input 
-                    placeholder="ID (例: c6)" 
-                    value={newCandidate.id}
-                    onChange={e => setNewCandidate({...newCandidate, id: e.target.value})}
-                    className="w-full bg-slate-700 p-3 rounded text-white"
-                    disabled={isSaving}
-                />
-                <input 
-                    placeholder="名稱 (例: 業務部)" 
-                    value={newCandidate.name}
-                    onChange={e => setNewCandidate({...newCandidate, name: e.target.value})}
-                    className="w-full bg-slate-700 p-3 rounded text-white"
-                    disabled={isSaving}
-                />
-                <input 
-                    placeholder="歌名" 
-                    value={newCandidate.song}
-                    onChange={e => setNewCandidate({...newCandidate, song: e.target.value})}
-                    className="w-full bg-slate-700 p-3 rounded text-white"
-                    disabled={isSaving}
-                />
-                <input 
-                    placeholder="照片連結 (選填)" 
-                    value={newCandidate.image}
-                    onChange={e => setNewCandidate({...newCandidate, image: e.target.value})}
-                    className="w-full bg-slate-700 p-3 rounded text-white"
-                    disabled={isSaving}
-                />
-                <button 
-                    disabled={isSaving}
-                    className={`w-full py-3 rounded font-bold transition-all flex items-center justify-center gap-2 ${isSaving ? 'bg-slate-600 cursor-wait' : 'bg-green-600 hover:bg-green-500'}`}
-                >
-                    {isSaving ? (
-                        <>
-                            <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
-                            同步中...
-                        </>
-                    ) : '新增至雲端'}
-                </button>
-            </form>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left Column */}
+          <div className="space-y-8">
+              {/* Global Mode Switch */}
+              <div className="glass-panel p-6 rounded-2xl border-l-4 border-purple-500">
+                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                      🎮 活動模式設定
+                      <span className="text-xs bg-slate-700 px-2 py-1 rounded text-slate-400">全場同步</span>
+                  </h2>
+                  <div className="flex items-center justify-between bg-slate-800 p-4 rounded-xl">
+                      <div>
+                          <p className={`font-bold text-lg ${globalTestMode ? 'text-green-400' : 'text-blue-400'}`}>
+                              {globalTestMode ? '🛠 測試模式 (無限投票)' : '🏆 正式活動 (一人一票)'}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">
+                              {globalTestMode ? '允許重複投票，方便測試' : '嚴格限制裝置，防止灌票'}
+                          </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                          <input 
+                              type="checkbox" 
+                              className="sr-only peer"
+                              checked={globalTestMode}
+                              onChange={handleGlobalTestModeToggle}
+                              disabled={isSaving}
+                          />
+                          <div className="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-600"></div>
+                      </label>
+                  </div>
+              </div>
+
+              {/* Stress Test */}
+              <div className="glass-panel p-6 rounded-2xl border-l-4 border-red-500">
+                <h2 className="text-xl font-bold mb-4">🚀 壓力測試</h2>
+                <div className="bg-slate-800 p-4 rounded-lg mb-4">
+                    <p className="text-sm text-slate-300 mb-2">
+                        ⚠️ 警告：這會發送 <span className="text-red-400 font-bold">真實的 HTTP 請求</span> 到 Google Form。
+                        請勿在正式活動時使用，以免干擾數據。
+                    </p>
+                    {isStressTesting ? (
+                         <div className="text-center py-4">
+                             <div className="text-2xl font-bold text-yellow-400 animate-pulse mb-2">正在發射... {stressCount}</div>
+                             <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+                                 <div className="h-full bg-yellow-500 animate-pulse w-full"></div>
+                             </div>
+                             <button onClick={() => voteService.stopStressTest()} className="mt-4 bg-red-600 px-6 py-2 rounded-full font-bold">停止測試</button>
+                         </div>
+                    ) : (
+                        <button 
+                            onClick={handleStressTest}
+                            className="w-full bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-600/50 py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2"
+                        >
+                            <span>🔥</span> 開始真·壓力測試 (寫入 DB)
+                        </button>
+                    )}
+                </div>
+              </div>
+
+              {/* Diagnostics */}
+              <div className="glass-panel p-6 rounded-2xl border-l-4 border-blue-500">
+                  <h2 className="text-xl font-bold mb-4">🔧 連線診斷</h2>
+                  <div className="grid grid-cols-2 gap-4">
+                      <button onClick={openFormDiagnostic} className="bg-slate-700 hover:bg-slate-600 p-3 rounded-lg text-sm text-left">
+                          📝 1. 打開表單 (檢查權限)
+                          <span className="block text-xs text-slate-400 mt-1">若看到登入畫面=失敗</span>
+                      </button>
+                      <button onClick={handleTestConnection} className="bg-slate-700 hover:bg-slate-600 p-3 rounded-lg text-sm text-left">
+                          📡 2. 測試 API 讀取
+                          <span className="block text-xs text-slate-400 mt-1">檢查 Apps Script</span>
+                      </button>
+                  </div>
+                  <div className="mt-4 text-xs text-slate-400 bg-black/20 p-2 rounded">
+                      <strong>私人帳號常見 401 錯誤：</strong><br/>
+                      請至 Google 表單設定 -> 回覆 -> 關閉「僅限 1 次回覆」。這是最常見的原因。
+                  </div>
+              </div>
           </div>
 
-          {/* List */}
-          <div className="md:col-span-8 bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl flex flex-col z-10">
-            <div className="p-5 bg-slate-750 border-b border-slate-700 flex justify-between items-center">
-              <h2 className="font-bold text-lg">目前參賽者名單</h2>
-              <span className="text-xs text-slate-400">資料來源: Google Sheet</span>
-            </div>
-            <div className="flex-grow overflow-y-auto max-h-[70vh] md:max-h-[800px]">
-                {candidates.map(c => (
-                    <div key={c.id} className="flex items-center p-4 border-b border-slate-700 last:border-0 hover:bg-slate-700/40 transition-colors group">
-                    <div className="w-16 h-16 rounded-xl bg-slate-700 overflow-hidden flex-shrink-0 border border-slate-600 mr-5 shadow-md relative">
-                        {c.image ? <img src={c.image} onError={handleImageError} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-2xl">👤</div>}
-                    </div>
-                    
-                    {editingId === c.id ? (
-                        <div className="flex-grow grid grid-cols-2 gap-2">
-                             <input disabled={isSaving} className="bg-slate-900 p-2 rounded text-sm" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} placeholder="名稱" />
-                             <input disabled={isSaving} className="bg-slate-900 p-2 rounded text-sm" value={editForm.song} onChange={e => setEditForm({...editForm, song: e.target.value})} placeholder="歌名" />
-                             <input disabled={isSaving} className="bg-slate-900 p-2 rounded text-sm col-span-2" value={editForm.image} onChange={e => setEditForm({...editForm, image: e.target.value})} placeholder="圖片URL" />
-                             <div className="col-span-2 flex gap-2 mt-2">
-                                <button disabled={isSaving} onClick={() => saveEdit(c.id)} className="bg-green-600 px-4 py-1 rounded text-sm disabled:opacity-50">
-                                    {isSaving ? '...' : '儲存'}
-                                </button>
-                                <button disabled={isSaving} onClick={() => setEditingId(null)} className="bg-slate-600 px-4 py-1 rounded text-sm disabled:opacity-50">取消</button>
-                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex-grow">
-                            <div className="flex items-center gap-2">
-                                <span className="bg-slate-900 text-slate-400 text-xs px-2 py-0.5 rounded font-mono">{c.id}</span>
-                                <div className="font-bold text-xl text-slate-100">{c.name}</div>
-                            </div>
-                            <div className="text-yellow-500 font-medium">{c.song}</div>
-                            <div className="flex gap-4 mt-2 text-xs text-slate-400">
-                                <span className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded border border-slate-700">🏆 總分: <b className="text-white">{c.totalScore}</b></span>
-                                <span className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded border border-slate-700">👥 人數: <b className="text-white">{c.voteCount}</b></span>
-                            </div>
-                        </div>
-                    )}
+          {/* Right Column: Manage Candidates */}
+          <div className="glass-panel p-6 rounded-2xl border-l-4 border-yellow-500">
+             <h2 className="text-xl font-bold mb-4 flex justify-between items-center">
+                 🎤 參賽者管理
+             </h2>
+             <div className="bg-yellow-500/10 text-yellow-200 p-3 rounded-lg text-sm mb-6 border border-yellow-500/20">
+                 💡 這裡的操作會直接同步到 Google Sheet 的 <strong>Config</strong> 分頁。全場裝置重新整理後會看到變更。
+             </div>
 
-                    <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
-                        {editingId !== c.id && (
-                            <>
-                                <button disabled={isSaving} onClick={() => startEdit(c)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-bold disabled:opacity-50">
-                                    編輯
-                                </button>
-                                <button disabled={isSaving} onClick={() => confirmDelete(c.id)} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs font-bold disabled:opacity-50">
-                                    刪除
-                                </button>
-                            </>
-                        )}
-                    </div>
-                    </div>
-                ))}
-            </div>
+             <form onSubmit={handleAddCandidate} className="mb-8 bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                 <h3 className="font-bold mb-4 text-slate-300">新增參賽者</h3>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                     <input placeholder="參賽者/隊伍名稱" required className="bg-slate-900 border border-slate-600 rounded p-2" value={newCandidate.name} onChange={e => setNewCandidate({...newCandidate, name: e.target.value})} />
+                     <input placeholder="演唱歌曲" required className="bg-slate-900 border border-slate-600 rounded p-2" value={newCandidate.song} onChange={e => setNewCandidate({...newCandidate, song: e.target.value})} />
+                     <input placeholder="照片 URL (選填)" className="bg-slate-900 border border-slate-600 rounded p-2" value={newCandidate.image} onChange={e => setNewCandidate({...newCandidate, image: e.target.value})} />
+                     <input placeholder="影片 URL (選填)" className="bg-slate-900 border border-slate-600 rounded p-2" value={newCandidate.videoLink} onChange={e => setNewCandidate({...newCandidate, videoLink: e.target.value})} />
+                 </div>
+                 <button type="submit" disabled={isSaving} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg disabled:opacity-50">
+                     {isSaving ? '處理中...' : '+ 新增並同步'}
+                 </button>
+             </form>
+
+             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                 {candidates.map(c => (
+                     <div key={c.id} className="bg-slate-800 p-4 rounded-xl flex items-center justify-between group hover:bg-slate-750 transition-colors">
+                         <div className="flex items-center gap-3">
+                             <div className="w-10 h-10 rounded-full bg-slate-600 overflow-hidden">
+                                 {c.image && <img src={c.image} className="w-full h-full object-cover" />}
+                             </div>
+                             <div>
+                                 <div className="font-bold">{c.name}</div>
+                                 <div className="text-xs text-slate-400">{c.song}</div>
+                             </div>
+                         </div>
+                         <div className="flex items-center gap-4">
+                             <div className="text-right">
+                                 <div className="font-mono font-bold text-yellow-400">{c.totalScore}</div>
+                                 <div className="text-[10px] text-slate-500">votes: {c.voteCount}</div>
+                             </div>
+                             <button 
+                                onClick={() => handleDelete(c.id, c.name)}
+                                className="text-slate-500 hover:text-red-500 p-2 transition-colors"
+                                title="刪除"
+                             >
+                                 ✕
+                             </button>
+                         </div>
+                     </div>
+                 ))}
+             </div>
           </div>
         </div>
       </div>
@@ -845,54 +769,45 @@ const AdminPage: React.FC = () => {
   );
 };
 
-const DevNav = () => {
-  const location = useLocation();
-  const [isOpen, setIsOpen] = useState(false);
+// --- Dev Nav (Floating) ---
+const DevNav: React.FC = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    if (!isOpen) {
+        return (
+            <button 
+                onClick={() => setIsOpen(true)}
+                className="fixed bottom-4 right-4 z-50 w-10 h-10 bg-slate-800/80 backdrop-blur text-white rounded-full flex items-center justify-center border border-slate-600 shadow-lg hover:scale-110 transition-transform opacity-50 hover:opacity-100"
+            >
+                🛠
+            </button>
+        );
+    }
 
-  return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 print:hidden">
-      {/* Menu */}
-      {isOpen && (
-        <div className="bg-slate-900/95 p-3 rounded-xl border border-slate-600 shadow-2xl backdrop-blur-md text-sm animate-fade-in-up flex flex-col gap-2 min-w-[160px]">
-           <div className="text-slate-400 text-center border-b border-slate-700 pb-2 mb-1 text-xs font-bold uppercase tracking-wider">
-             快速切換 (Demo)
-           </div>
-           <Link onClick={() => setIsOpen(false)} to="/" className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${location.pathname === '/' ? 'bg-yellow-600 text-white font-bold shadow-lg' : 'text-slate-300 hover:bg-slate-700'}`}>
-             <span className="text-lg">📱</span> 投票頁 (手機)
-           </Link>
-           <Link onClick={() => setIsOpen(false)} to="/results" className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${location.pathname === '/results' ? 'bg-blue-600 text-white font-bold shadow-lg' : 'text-slate-300 hover:bg-slate-700'}`}>
-             <span className="text-lg">📺</span> 電視牆 (結果)
-           </Link>
-           <Link onClick={() => setIsOpen(false)} to="/admin" className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${location.pathname === '/admin' ? 'bg-slate-700 text-white font-bold shadow-lg border border-slate-500' : 'text-slate-300 hover:bg-slate-700'}`}>
-             <span className="text-lg">⚙️</span> 後台 (管理)
-           </Link>
+    return (
+        <div className="fixed bottom-4 right-4 z-50 bg-slate-900/90 backdrop-blur border border-slate-600 p-2 rounded-xl flex flex-col gap-2 shadow-2xl animate-scale-up">
+            <div className="flex justify-between items-center px-2 mb-1 border-b border-slate-700 pb-1">
+                <span className="text-xs font-bold text-slate-400">快速導覽</span>
+                <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            <Link to="/" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm text-center">📱 投票頁</Link>
+            <Link to="/results" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm text-center">📺 電視牆</Link>
+            <Link to="/admin" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm text-center">⚙️ 後台</Link>
         </div>
-      )}
-
-      {/* Toggle Button */}
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-12 h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-full shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-slate-600 flex items-center justify-center transition-transform hover:scale-110 active:scale-95"
-      >
-        {isOpen ? '✕' : '🛠'}
-      </button>
-    </div>
-  );
+    );
 };
 
-// --- App ---
+// --- Main App ---
 
 const App: React.FC = () => {
   return (
     <HashRouter>
-      <div className="font-sans text-white selection:bg-yellow-500 selection:text-black">
-        <Routes>
-          <Route path="/" element={<VotePage />} />
-          <Route path="/results" element={<ResultsPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-        </Routes>
-        <DevNav />
-      </div>
+      <Routes>
+        <Route path="/" element={<VotePage />} />
+        <Route path="/results" element={<ResultsPage />} />
+        <Route path="/admin" element={<AdminPage />} />
+      </Routes>
+      <DevNav />
     </HashRouter>
   );
 };
