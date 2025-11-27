@@ -10,11 +10,9 @@ import Fireworks from './components/Fireworks';
 
 const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
   e.currentTarget.src = "https://storage.googleapis.com/example-eggy-addressable/DownloadFile/Slogan.png";
-  //https://logos-world.net/wp-content/uploads/2025/01/Quanta-Computer-Symbol.png
-  //https://placehold.co/600x600/1e293b/fbbf24?text=Music+Star
 };
 
-// Custom Confirmation Modal to replace window.confirm (which is blocked in Sandboxes)
+// Custom Confirmation Modal
 const ConfirmModal: React.FC<{
     isOpen: boolean;
     title: string;
@@ -56,8 +54,6 @@ const Header: React.FC<{ title?: string; subtitle?: string; size?: 'small' | 'la
         
         {/* 
             ⬇️⬇️⬇️ 這裡更換最上面的 LOGO 圖片 ⬇️⬇️⬇️
-            將 src="https://..." 引號內的網址換成你自己圖片的連結
-            目前的尺寸已調整為原本的 2 倍大 (h-40 / md:h-56) 並移除了邊框
         */}
         <img 
             src="https://images.unsplash.com/photo-1548625361-98770742d4a0?auto=format&fit=crop&w=600&q=80" 
@@ -89,16 +85,15 @@ const VotePage: React.FC = () => {
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [score, setScore] = useState(10);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGlobalTestMode, setIsGlobalTestMode] = useState(false);
 
   useEffect(() => {
-    // 1. 進入投票頁面時，主動去抓一次最新的 Excel 設定 (Single Fetch)
-    // 這樣觀眾重整網頁就能看到新的歌名，但又不會持續 Polling 浪費流量
     voteService.fetchLatestData();
 
-    // 2. 訂閱本地狀態更新
     const sync = () => {
       setCandidates(voteService.getCandidates());
       setScoredIds(voteService.getScoredCandidateIds());
+      setIsGlobalTestMode(voteService.isGlobalTestMode);
     };
     sync();
     return voteService.subscribe(sync);
@@ -108,21 +103,21 @@ const VotePage: React.FC = () => {
     if (!selectedCandidate) return;
     setIsSubmitting(true);
     
-    await new Promise(r => setTimeout(r, 600)); // Tiny delay for UX
+    await new Promise(r => setTimeout(r, 600)); 
     
     const result = await voteService.castVote(selectedCandidate.id, score);
     if (result.success) {
       setScoredIds([...scoredIds, selectedCandidate.id]);
-      setSelectedCandidate(null); // Close modal
+      setSelectedCandidate(null); 
     } else {
-      // Use a non-blocking notification instead of alert if possible, but alert is usually fine in vote page
       alert(result.message);
     }
     setIsSubmitting(false);
   };
 
   const openModal = (c: Candidate) => {
-    if (scoredIds.includes(c.id)) {
+    // 只有在非測試模式下，才檢查是否投過
+    if (!isGlobalTestMode && scoredIds.includes(c.id)) {
         alert("您已經評分過這位參賽者囉！");
         return;
     }
@@ -130,31 +125,44 @@ const VotePage: React.FC = () => {
     setScore(10);
   };
 
-  // Calculate percentage for slider background gradient
   const sliderPercentage = ((score - 1) / 9) * 100;
 
   return (
     <div className="min-h-screen pb-24 px-4 relative z-10">
       <Header subtitle="歌唱大賽評分系統" />
       
-      {/* 提示訊息區塊 */}
-      <div className="flex justify-center mt-2 mb-6 animate-fade-in-up px-2">
-        <div className="bg-slate-800/80 backdrop-blur-md border border-yellow-500/30 text-yellow-300 px-6 py-3 rounded-full flex items-center gap-3 shadow-[0_0_15px_rgba(234,179,8,0.15)] max-w-full">
-            <span className="text-xl animate-bounce">💡</span>
-            <span className="font-bold text-sm md:text-base text-center leading-tight">提醒：每位演唱者只能評分一次喔！</span>
+      {/* Test Mode Banner */}
+      {isGlobalTestMode && (
+          <div className="flex justify-center mb-4 animate-fade-in-up">
+              <div className="bg-green-600/90 text-white px-6 py-2 rounded-full flex items-center gap-2 shadow-lg animate-pulse border-2 border-green-400">
+                  <span className="text-xl">🔧</span>
+                  <span className="font-bold">測試模式：不限投票次數</span>
+              </div>
+          </div>
+      )}
+
+      {/* 提示訊息區塊 (正式模式才顯示) */}
+      {!isGlobalTestMode && (
+        <div className="flex justify-center mt-2 mb-6 animate-fade-in-up px-2">
+            <div className="bg-slate-800/80 backdrop-blur-md border border-yellow-500/30 text-yellow-300 px-6 py-3 rounded-full flex items-center gap-3 shadow-[0_0_15px_rgba(234,179,8,0.15)] max-w-full">
+                <span className="text-xl animate-bounce">💡</span>
+                <span className="font-bold text-sm md:text-base text-center leading-tight">提醒：每位演唱者只能評分一次喔！</span>
+            </div>
         </div>
-      </div>
+      )}
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
         {candidates.map((candidate) => {
           const isScored = scoredIds.includes(candidate.id);
+          const isDisabled = isScored && !isGlobalTestMode; // 測試模式下永不禁用
+
           return (
             <div 
               key={candidate.id}
-              onClick={() => !isScored && openModal(candidate)}
+              onClick={() => !isDisabled && openModal(candidate)}
               className={`
                 relative overflow-hidden rounded-[2rem] cursor-pointer transition-all duration-300 group
-                ${isScored 
+                ${isDisabled 
                   ? 'opacity-60 grayscale-[0.8] scale-95 cursor-default border-slate-700' 
                   : 'hover:scale-[1.03] hover:-translate-y-2 hover:shadow-[0_0_40px_rgba(var(--color-glow),0.4)] border-slate-600'
                 }
@@ -176,16 +184,20 @@ const VotePage: React.FC = () => {
                  )}
                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-90"></div>
                  
-                 {/* Top Badge */}
                  <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 text-xs font-bold text-white">
                     編號 #{candidate.id}
                  </div>
 
-                 {isScored && (
+                 {isScored && !isGlobalTestMode && (
                      <div className="absolute inset-0 bg-slate-900/70 flex items-center justify-center z-10 backdrop-blur-[2px]">
                          <span className="bg-green-500 text-white px-8 py-3 rounded-full font-black text-xl transform -rotate-12 border-4 border-white shadow-[0_10px_20px_rgba(0,0,0,0.5)]">
                            ✓ 已評分
                          </span>
+                     </div>
+                 )}
+                 {isScored && isGlobalTestMode && (
+                     <div className="absolute top-4 right-4 bg-green-500 text-white px-2 py-1 rounded-md text-xs font-bold shadow-lg">
+                         已投過
                      </div>
                  )}
               </div>
@@ -200,7 +212,7 @@ const VotePage: React.FC = () => {
                   <span className="text-slate-300 text-lg font-medium line-clamp-1">{candidate.song}</span>
                 </div>
                 
-                {!isScored ? (
+                {!isDisabled ? (
                   <button className="mt-6 w-full bg-slate-700 group-hover:bg-gradient-to-r group-hover:from-yellow-500 group-hover:to-red-500 text-white py-4 rounded-xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2">
                     <span>⭐</span> 點擊評分
                   </button>
@@ -258,7 +270,6 @@ const VotePage: React.FC = () => {
                         <span>🤩 超神</span>
                     </div>
                     
-                    {/* CUSTOM SLIDER WITH DYNAMIC GRADIENT FILL */}
                     <input 
                         type="range" 
                         min="1" 
@@ -307,9 +318,7 @@ const ResultsPage: React.FC = () => {
   const [commentary, setCommentary] = useState<string>("AI 正在分析戰況...");
   const [totalScore, setTotalScore] = useState(0);
   
-  // Data Sync & Polling Logic
   useEffect(() => {
-    // 1. 進入此頁面時，啟動 Polling (每3秒抓一次 Google Sheet)
     voteService.startPolling();
 
     const updateData = () => {
@@ -319,11 +328,9 @@ const ResultsPage: React.FC = () => {
       setTotalScore(sorted.reduce((acc, curr) => acc + curr.totalScore, 0));
     };
     
-    // 2. 訂閱資料變化
     updateData();
     const unsubscribe = voteService.subscribe(updateData);
 
-    // 3. 離開頁面時，停止 Polling (引用計數，不會誤殺 Admin 的連線)
     return () => {
       unsubscribe();
       voteService.stopPolling();
@@ -333,14 +340,12 @@ const ResultsPage: React.FC = () => {
   useEffect(() => {
     const fetchCommentary = async () => {
       const currentCandidates = voteService.getCandidates();
-      // 只有當真的有分數時才講評
       if (currentCandidates.length > 0 && currentCandidates.some(c => c.totalScore > 0)) {
         const text = await generateLiveCommentary(currentCandidates);
         setCommentary(text);
       }
     };
     
-    // 延遲第一次講評
     const timer = setTimeout(fetchCommentary, 3000);
     const interval = setInterval(fetchCommentary, 20000);
     return () => {
@@ -356,7 +361,6 @@ const ResultsPage: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-white relative font-sans overflow-x-hidden">
       
-      {/* Spring Gala Background with Overlay */}
       <div 
         className="fixed inset-0 z-0 bg-cover bg-center pointer-events-none"
         style={{ 
@@ -370,7 +374,6 @@ const ResultsPage: React.FC = () => {
       <div className="relative z-10 flex flex-col h-full p-4 md:p-6">
         <Header subtitle={`總熱度: ${totalScore}`} size="small" />
 
-        {/* Podium Section (Top 3) */}
         <div className="flex flex-col md:flex-row justify-center items-end gap-6 md:gap-8 mb-8 mt-4 md:h-[450px]">
            
            {/* 2nd Place */}
@@ -422,7 +425,6 @@ const ResultsPage: React.FC = () => {
            )}
         </div>
 
-        {/* The List (Rank 4+) */}
         {others.length > 0 && (
             <div className="max-w-5xl mx-auto w-full grid gap-3 animate-fade-in-up pb-8">
                 {others.map((c, idx) => (
@@ -448,7 +450,6 @@ const ResultsPage: React.FC = () => {
             </div>
         )}
         
-        {/* Footer Commentary */}
         <div className="fixed bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-md border-t border-yellow-500/30 p-2 md:p-3 flex items-center justify-center z-50">
             <span className="text-2xl mr-3 animate-pulse">🎤</span>
             <p className="text-sm md:text-xl font-bold text-yellow-100 text-center truncate max-w-4xl">{commentary}</p>
@@ -464,21 +465,17 @@ const AdminPage: React.FC = () => {
   const [isAuthed, setIsAuthed] = useState(false);
   const [password, setPassword] = useState('');
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [isGlobalTestMode, setIsGlobalTestMode] = useState(false); // 全域測試模式狀態
   const [isSaving, setIsSaving] = useState(false); 
   
-  // Stress Test State
   const [stressProgress, setStressProgress] = useState({ count: 0, total: 0 });
   const [isStressing, setIsStressing] = useState(false);
 
-  // Edit/Add Form State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newCandidate, setNewCandidate] = useState({ id: '', name: '', song: '', image: '' });
   const [editForm, setEditForm] = useState({ name: '', song: '', image: '' });
-
-  // Diagnostics
   const [diagResult, setDiagResult] = useState<string>('');
 
-  // Confirmation Modal State
   const [confirmState, setConfirmState] = useState<{
       isOpen: boolean;
       title: string;
@@ -500,6 +497,7 @@ const AdminPage: React.FC = () => {
     const update = () => {
         setCandidates(voteService.getCandidates());
         setIsDemoMode(voteService.isDemoMode);
+        setIsGlobalTestMode(voteService.isGlobalTestMode);
     };
     voteService.subscribe(update);
     return () => {
@@ -521,13 +519,23 @@ const AdminPage: React.FC = () => {
       setIsDemoMode(newState);
   };
   
+  // 切換全域測試模式 (寫入 Excel)
+  const toggleGlobalTestMode = async () => {
+      const newState = !isGlobalTestMode;
+      setIsSaving(true);
+      try {
+          await voteService.setGlobalTestMode(newState);
+      } finally {
+          setIsSaving(false);
+      }
+  };
+  
   const testApi = async () => {
       setDiagResult("正在測試 API...");
       const res = await voteService.testConnection();
       setDiagResult(res.message);
   };
 
-  // Replaces window.confirm
   const requestStressTest = () => {
       if (isDemoMode) {
           alert("請先關閉 Demo Mode，否則只是在跑假資料動畫！");
@@ -555,7 +563,6 @@ const AdminPage: React.FC = () => {
       });
   };
 
-  // Add Candidate Logic
   const handleAdd = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newCandidate.id || !newCandidate.name) return;
@@ -570,7 +577,6 @@ const AdminPage: React.FC = () => {
       }
   };
 
-  // Delete Logic with Custom Modal
   const confirmDelete = (id: string) => {
       setConfirmState({
           isOpen: true,
@@ -593,7 +599,6 @@ const AdminPage: React.FC = () => {
       }
   };
 
-  // Edit Logic
   const startEdit = (c: Candidate) => {
       setEditingId(c.id);
       setEditForm({ name: c.name, song: c.song, image: c.image || '' });
@@ -646,18 +651,29 @@ const AdminPage: React.FC = () => {
              🔧 管理工具
           </h2>
           <div className="flex items-center gap-4">
-             <div className="flex items-center gap-2">
-                 <span className="text-sm font-bold text-slate-400">🧪 模擬模式 (Demo Mode)</span>
+             {/* Global Test Mode Toggle */}
+             <div className="flex items-center gap-3 bg-slate-900 px-4 py-2 rounded-lg border border-slate-600">
+                 <span className={`text-sm font-bold ${isGlobalTestMode ? 'text-green-400' : 'text-slate-400'}`}>
+                     {isGlobalTestMode ? '🛠 測試模式 (無限投票)' : '🏆 正式活動 (一人一票)'}
+                 </span>
                  <button 
-                    onClick={toggleDemoMode}
-                    className={`w-12 h-6 rounded-full p-1 transition-colors ${isDemoMode ? 'bg-green-500' : 'bg-slate-600'}`}
+                    onClick={toggleGlobalTestMode}
+                    disabled={isSaving}
+                    className={`w-14 h-7 rounded-full p-1 transition-colors relative ${isGlobalTestMode ? 'bg-green-600' : 'bg-slate-600'}`}
                  >
-                     <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isDemoMode ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                     <div className={`w-5 h-5 bg-white rounded-full transition-transform shadow-md ${isGlobalTestMode ? 'translate-x-7' : 'translate-x-0'}`}></div>
                  </button>
              </div>
-            <button onClick={() => voteService.clearMyHistory()} className="text-yellow-400 text-sm hover:underline">
-              清除本機評分紀錄
-            </button>
+
+             <div className="flex items-center gap-2 border-l border-slate-600 pl-4">
+                 <span className="text-sm font-bold text-slate-500">Demo (Local)</span>
+                 <button 
+                    onClick={toggleDemoMode}
+                    className={`w-10 h-5 rounded-full p-0.5 transition-colors ${isDemoMode ? 'bg-blue-500' : 'bg-slate-700'}`}
+                 >
+                     <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isDemoMode ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                 </button>
+             </div>
           </div>
         </div>
         
