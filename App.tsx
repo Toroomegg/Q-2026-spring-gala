@@ -707,7 +707,7 @@ const AdminPage: React.FC = () => {
                   </div>
                   <div className="mt-4 text-xs text-slate-400 bg-black/20 p-2 rounded">
                       <strong>私人帳號常見 401 錯誤：</strong><br/>
-                      請至 Google 表單設定 -> 回覆 -> 關閉「僅限 1 次回覆」。這是最常見的原因。
+                      請至 Google 表單設定 &rarr; 回覆 &rarr; 關閉「僅限 1 次回覆」。這是最常見的原因。
                   </div>
               </div>
           </div>
