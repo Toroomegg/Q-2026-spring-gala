@@ -19,7 +19,8 @@ const ConfirmModal: React.FC<{
     onConfirm: () => void;
     onCancel: () => void;
     isDangerous?: boolean;
-}> = ({ isOpen, title, message, onConfirm, onCancel, isDangerous }) => {
+    showCancel?: boolean;
+}> = ({ isOpen, title, message, onConfirm, onCancel, isDangerous, showCancel = true }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -27,17 +28,19 @@ const ConfirmModal: React.FC<{
                 <h3 className={`text-xl font-bold mb-2 ${isDangerous ? 'text-red-500' : 'text-white'}`}>{title}</h3>
                 <p className="text-slate-300 mb-6 whitespace-pre-wrap">{message}</p>
                 <div className="flex gap-3 justify-end">
-                    <button 
-                        onClick={onCancel}
-                        className="px-4 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-600 transition-colors"
-                    >
-                        取消
-                    </button>
+                    {showCancel && (
+                        <button 
+                            onClick={onCancel}
+                            className="px-4 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-600 transition-colors"
+                        >
+                            取消
+                        </button>
+                    )}
                     <button 
                         onClick={onConfirm}
                         className={`px-4 py-2 rounded-lg font-bold text-white transition-colors ${isDangerous ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'}`}
                     >
-                        確定執行
+                        確定
                     </button>
                 </div>
             </div>
@@ -70,7 +73,7 @@ const Header: React.FC<{ title?: string; subtitle?: string; size?: 'small' | 'la
     </div>
     {subtitle && (
       <p className="text-yellow-100/90 mt-2 font-bold tracking-[0.2em] uppercase text-xs md:text-lg drop-shadow-md">
-        — {subtitle} —
+        &mdash; {subtitle} &mdash;
       </p>
     )}
   </header>
@@ -353,17 +356,8 @@ const ResultsPage: React.FC = () => {
   const top3 = candidates.slice(0, 3);
   const others = candidates.slice(3);
 
-  // Dynamic Font Size Calculation
-  const maxScore = candidates[0]?.totalScore || 1;
-  const getFontSizeClass = (score: number) => {
-      const ratio = score / maxScore;
-      if (ratio > 0.9) return "text-6xl md:text-8xl text-yellow-300 drop-shadow-[0_0_30px_rgba(234,179,8,0.8)]";
-      if (ratio > 0.7) return "text-5xl md:text-7xl text-gray-100";
-      return "text-4xl md:text-5xl text-gray-300";
-  };
-
   return (
-    <div className="min-h-screen bg-slate-900 text-white overflow-hidden relative pb-20">
+    <div className="min-h-screen bg-slate-900 text-white overflow-hidden relative pb-40">
       <Fireworks />
       
       {/* Background Ambience */}
@@ -375,20 +369,8 @@ const ResultsPage: React.FC = () => {
       <div className="relative z-10 px-4 md:px-8 py-6 max-w-7xl mx-auto h-full flex flex-col">
         <Header size="small" subtitle="即時戰況" />
 
-        {/* AI Commentary Marquee */}
-        <div className="mb-8 bg-slate-800/50 backdrop-blur-md border border-slate-600 p-4 rounded-xl shadow-lg relative overflow-hidden group">
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500"></div>
-            <div className="flex items-center gap-4">
-                <span className="text-2xl animate-spin-slow">🤖</span>
-                <p className="text-xl md:text-2xl font-bold text-yellow-100 typing-effect whitespace-nowrap overflow-hidden text-ellipsis">
-                    {commentary}
-                </p>
-            </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-        </div>
-
         {/* Podium Layout (Top 3) */}
-        <div className="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-8 mb-12 min-h-[400px]">
+        <div className="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-8 mb-12 min-h-[400px] mt-4">
             {/* 2nd Place */}
             {top3[1] && (
                 <div className="order-2 md:order-1 w-full md:w-1/3 flex flex-col items-center animate-slide-up" style={{ animationDelay: '0.2s' }}>
@@ -473,8 +455,20 @@ const ResultsPage: React.FC = () => {
                 <span className="text-white font-mono font-bold text-xl ml-2">{totalScore}</span>
             </div>
         </div>
-
       </div>
+
+      {/* AI Commentary Fixed Footer (Full Width Banner) */}
+      <div className="fixed bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-md border-t-2 border-yellow-500 z-50 py-3 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+        <div className="max-w-7xl mx-auto px-4 flex items-center gap-4">
+            <span className="text-3xl animate-bounce">🤖</span>
+            <div className="flex-1 overflow-hidden">
+                <p className="text-xl md:text-2xl font-bold text-yellow-100 whitespace-nowrap overflow-hidden text-ellipsis">
+                    {commentary}
+                </p>
+            </div>
+        </div>
+      </div>
+
     </div>
   );
 };
@@ -489,8 +483,8 @@ const AdminPage: React.FC = () => {
   const [globalTestMode, setGlobalTestMode] = useState(false);
   
   // Dialog States
-  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void, isDangerous?: boolean}>({
-      isOpen: false, title: '', message: '', onConfirm: () => {}
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void, isDangerous?: boolean, showCancel?: boolean}>({
+      isOpen: false, title: '', message: '', onConfirm: () => {}, showCancel: true
   });
   
   // Loading States
@@ -537,6 +531,7 @@ const AdminPage: React.FC = () => {
         isOpen: true,
         title: '新增參賽者',
         message: `確定要新增 "${newCandidate.name}" 嗎？\n這將會寫入 Google Sheet。`,
+        showCancel: true,
         onConfirm: async () => {
             setConfirmModal(prev => ({...prev, isOpen: false}));
             setIsSaving(true);
@@ -553,6 +548,7 @@ const AdminPage: React.FC = () => {
         title: '刪除參賽者',
         message: `⚠️ 警告：確定要刪除 "${name}" 嗎？\n此操作無法復原，且會同步刪除 Excel 中的資料。`,
         isDangerous: true,
+        showCancel: true,
         onConfirm: async () => {
             setConfirmModal(prev => ({...prev, isOpen: false}));
             setIsSaving(true);
@@ -568,6 +564,7 @@ const AdminPage: React.FC = () => {
         title: '🔥 開始壓力測試',
         message: '這將會在 60 秒內發送 100 筆真實請求到 Google Form。\n請確保您的網路穩定。\n\n確定要開始嗎？',
         isDangerous: true,
+        showCancel: true,
         onConfirm: () => {
             setConfirmModal(prev => ({...prev, isOpen: false}));
             voteService.runStressTest(100, 60, (count) => setStressCount(count));
@@ -575,9 +572,38 @@ const AdminPage: React.FC = () => {
     });
   };
 
+  const handleResetScores = () => {
+    setConfirmModal({
+        isOpen: true,
+        title: '⚠️ 清空雲端所有票數',
+        message: '警告：這將會清空 Google Sheet 中的所有分數紀錄！\n活動重新開始前使用。\n此操作無法復原。確定要執行嗎？',
+        isDangerous: true,
+        showCancel: true,
+        onConfirm: async () => {
+            setConfirmModal(prev => ({...prev, isOpen: false}));
+            setIsSaving(true);
+            await voteService.resetAllRemoteVotes();
+            setIsSaving(false);
+            setConfirmModal({
+                isOpen: true,
+                title: '清空成功',
+                message: '所有票數已歸零。',
+                showCancel: false,
+                onConfirm: () => setConfirmModal(prev => ({...prev, isOpen: false}))
+            });
+        }
+    });
+  };
+
   const handleTestConnection = async () => {
       const res = await voteService.testConnection();
-      alert(res.message);
+      setConfirmModal({
+          isOpen: true,
+          title: res.ok ? '連線成功' : '連線失敗',
+          message: res.message,
+          showCancel: false,
+          onConfirm: () => setConfirmModal(prev => ({...prev, isOpen: false}))
+      });
   };
 
   const openFormDiagnostic = () => {
@@ -613,6 +639,7 @@ const AdminPage: React.FC = () => {
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal(prev => ({...prev, isOpen: false}))}
         isDangerous={confirmModal.isDangerous}
+        showCancel={confirmModal.showCancel}
       />
 
       <div className="max-w-6xl mx-auto">
@@ -709,6 +736,20 @@ const AdminPage: React.FC = () => {
                       <strong>私人帳號常見 401 錯誤：</strong><br/>
                       請至 Google 表單設定 &rarr; 回覆 &rarr; 關閉「僅限 1 次回覆」。這是最常見的原因。
                   </div>
+              </div>
+
+               {/* Danger Zone */}
+               <div className="glass-panel p-6 rounded-2xl border-l-4 border-red-800 mt-8">
+                  <h2 className="text-xl font-bold mb-4 text-red-400">⛔️ 危險操作區</h2>
+                  <p className="text-sm text-slate-400 mb-4">
+                      活動正式開始前，請確保所有測試用的票數都已清空。
+                  </p>
+                  <button 
+                      onClick={handleResetScores}
+                      className="w-full bg-red-800 hover:bg-red-700 text-white py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2"
+                  >
+                      <span>🗑</span> 清空雲端所有票數
+                  </button>
               </div>
           </div>
 

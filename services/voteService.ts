@@ -79,6 +79,7 @@ class VoteService {
   private candidates: Candidate[] = [...INITIAL_CANDIDATES]; 
   private pollingIntervalId: any = null;
   private pollingSubscriberCount = 0; 
+  private consecutiveErrors = 0; // 追蹤連續錯誤次數
   
   // Local Demo Mode (只影響本機顯示，不送出請求)
   public isDemoMode = false;
@@ -135,6 +136,13 @@ class VoteService {
 
   async deleteCandidate(id: string) {
       await this.sendConfigToSheet('DELETE', { id });
+  }
+
+  async resetAllRemoteVotes() {
+      await this.sendConfigToSheet('RESET_SCORES' as any, {});
+      // 樂觀重置本地數據
+      this.candidates = this.candidates.map(c => ({...c, totalScore: 0, voteCount: 0}));
+      this.notifyListeners();
   }
 
   // 設定全域測試模式 (寫入 Excel)
@@ -323,11 +331,18 @@ class VoteService {
   }
 
   public async fetchLatestData() {
+    // 如果連續錯誤超過 5 次，暫停一次 polling 以減少負載
+    if (this.consecutiveErrors > 5 && Math.random() > 0.2) return;
+
     try {
       const url = `${CONFIG.GOOGLE_SCRIPT_URL}?t=${Date.now()}`;
       const res = await fetch(url);
-      if (!res.ok) return;
       
+      if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+      }
+      
+      this.consecutiveErrors = 0; // 重置錯誤計數
       const text = await res.text();
       let data;
       try { data = JSON.parse(text); } catch (e) { return; }
@@ -345,7 +360,11 @@ class VoteService {
 
       if (Array.isArray(remoteConfig)) {
           remoteConfig.forEach((rc: any) => {
-              if (rc.id === SETTING_ROW_ID) {
+              // 嚴格過濾 ID，避免 undefined 或空字串
+              const id = String(rc.id || '').trim();
+              if (!id) return;
+
+              if (id === SETTING_ROW_ID) {
                   settingRowFound = true;
                   // 檢查 Name 是否為 TEST
                   if (rc.name === 'TEST') {
@@ -353,9 +372,9 @@ class VoteService {
                   } else {
                       newGlobalTestMode = false;
                   }
-              } else if (rc.id) {
+              } else {
                   // 只有非設定且有 ID 的才算參賽者
-                  validRemoteCandidates.push(rc);
+                  validRemoteCandidates.push({ ...rc, id }); // 確保 ID 是字串
               }
           });
       }
@@ -405,8 +424,7 @@ class VoteService {
         return c;
       });
 
-      // 檢查名單是否有變動 (數量不同，或 ID 不同，或內容不同)
-      // 這裡做深一點的檢查，確保 Excel 改名時會觸發更新
+      // 檢查名單是否有變動
       if (newCandidateList.length !== this.candidates.length) {
           hasChanges = true;
       } else {
@@ -426,7 +444,10 @@ class VoteService {
       }
 
     } catch (error) {
-      console.error("Polling error:", error);
+      this.consecutiveErrors++;
+      if (this.consecutiveErrors <= 3) { // 前三次錯誤才 log，避免洗版
+         console.warn("Polling error:", error);
+      }
     }
   }
 
